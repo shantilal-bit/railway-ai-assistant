@@ -8,7 +8,6 @@ Production RAG Architecture:
 - Private Cloudflare R2 PDF storage + public Google Drive import + Tesseract OCR (eng+hin)
 """
 
-from __future__ import annotations
 
 import os
 import re
