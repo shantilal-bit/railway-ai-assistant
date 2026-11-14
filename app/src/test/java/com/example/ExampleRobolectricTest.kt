@@ -7,13 +7,18 @@ import com.example.data.local.DepartmentEntity
 import com.example.data.local.DivisionEntity
 import com.example.data.local.RailwayDatabase
 import com.example.data.local.ZoneEntity
+import com.example.data.remote.AdminDocumentDto
 import com.example.data.remote.ChatAskResponseDto
+import com.example.data.remote.ImportDrivePdfRequestDto
 import com.example.data.remote.NetworkModule
 import com.example.data.remote.TaxonomyResponseDto
+import com.example.data.repository.AdminRepository
+import com.example.domain.model.ScopeLevel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -127,5 +132,70 @@ class ExampleRobolectricTest {
         assertEquals("Rule 4.10", parsed?.applicableRuleNumber)
         assertEquals("42", parsed?.pdfPageNumber)
         assertEquals("groq", parsed?.aiProvider)
+    }
+
+    @Test
+    fun `moshi parses AdminDocumentDto with RAG ingestion status, chunk count, and error fields`() {
+        val moshi = NetworkModule.createMoshi()
+        val adapter = moshi.adapter(AdminDocumentDto::class.java)
+        val json = """
+            {
+              "id": "doc-123",
+              "title": "RBE 45/2024 Leave Circular",
+              "document_number": "RBE 45/2024",
+              "document_type": "CIRCULAR",
+              "issuing_authority": "Railway Board",
+              "authority_rank": 100,
+              "status": "draft",
+              "issue_date": "2024-05-01",
+              "effective_date": "2024-06-01",
+              "requires_ocr": true,
+              "ocr_status": "failed",
+              "ingestion_status": "failed",
+              "ingestion_error": "No extractable text found",
+              "chunk_count": 0,
+              "indexed_at": null,
+              "source_type": "google_drive",
+              "source_url": "https://drive.google.com/file/d/abc123456789/view",
+              "page_count": 12
+            }
+        """.trimIndent()
+        val parsed = adapter.fromJson(json)
+        assertNotNull(parsed)
+        assertEquals(100, parsed?.authorityRank)
+        assertEquals("failed", parsed?.ingestionStatus)
+        assertEquals("No extractable text found", parsed?.ingestionError)
+        assertEquals("google_drive", parsed?.sourceType)
+        assertEquals(12, parsed?.pageCount)
+    }
+
+    @Test
+    fun `AdminRepository validates PDF magic signature and non-empty bytes`() {
+        AdminRepository.validatePdfBytes("%PDF-1.7\n%...".toByteArray(Charsets.US_ASCII))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            AdminRepository.validatePdfBytes(ByteArray(0))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            AdminRepository.validatePdfBytes("<html>not a pdf</html>".toByteArray(Charsets.US_ASCII))
+        }
+    }
+
+    @Test
+    fun `ImportDrivePdfRequestDto serializes scopeLevel and authorityRank`() {
+        val moshi = NetworkModule.createMoshi()
+        val adapter = moshi.adapter(ImportDrivePdfRequestDto::class.java)
+        val req = ImportDrivePdfRequestDto(
+            driveUrl = "https://drive.google.com/file/d/1234567890abcdef/view",
+            title = "G&SR WR",
+            documentType = "RULE_BOOK",
+            issuingAuthority = "Railway Board",
+            authorityRank = 100,
+            scopeLevel = ScopeLevel.RAILWAY_BOARD.apiValue,
+            zoneCode = "WR",
+        )
+        val json = adapter.toJson(req)
+        assertTrue(json.contains("\"scopeLevel\":\"RAILWAY_BOARD\""))
+        assertTrue(json.contains("\"authorityRank\":100"))
     }
 }

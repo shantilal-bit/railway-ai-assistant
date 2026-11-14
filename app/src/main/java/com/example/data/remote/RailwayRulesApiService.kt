@@ -27,13 +27,24 @@ interface RailwayRulesApiService {
     suspend fun askRule(@Body request: ChatAskRequestDto): ChatAskResponseDto
 
     @GET("v1/admin/documents")
-    suspend fun listAdminDocuments(): List<AdminDocumentDto>
+    suspend fun listAdminDocuments(
+        @Query("search") search: String? = null,
+    ): List<AdminDocumentDto>
 
     @POST("v1/admin/documents/presign-upload")
     suspend fun presignPdfUpload(@Body request: PresignUploadRequestDto): PresignUploadResponseDto
 
     @POST("v1/admin/documents")
     suspend fun registerDocument(@Body request: RegisterDocumentRequestDto): AdminDocumentDto
+
+    @POST("v1/admin/documents/import-drive")
+    suspend fun importDrivePdf(@Body request: ImportDrivePdfRequestDto): AdminDocumentDto
+
+    @POST("v1/admin/documents/{id}/reprocess")
+    suspend fun reprocessDocument(
+        @Path("id") documentId: String,
+        @Body body: ReprocessDocumentRequestDto,
+    ): AdminDocumentDto
 
     @PATCH("v1/admin/documents/{id}/status")
     suspend fun updateDocumentStatus(

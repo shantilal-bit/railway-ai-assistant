@@ -140,11 +140,18 @@ data class AdminDocumentDto(
     @Json(name = "document_number") val documentNumber: String? = null,
     @Json(name = "document_type") val documentType: String,
     @Json(name = "issuing_authority") val issuingAuthority: String,
+    @Json(name = "authority_rank") val authorityRank: Int = 50,
     val status: String,
     @Json(name = "issue_date") val issueDate: String? = null,
     @Json(name = "effective_date") val effectiveDate: String? = null,
     @Json(name = "requires_ocr") val requiresOcr: Boolean = false,
     @Json(name = "ocr_status") val ocrStatus: String = "not_needed",
+    @Json(name = "ingestion_status") val ingestionStatus: String = "pending",
+    @Json(name = "ingestion_error") val ingestionError: String? = null,
+    @Json(name = "chunk_count") val chunkCount: Int = 0,
+    @Json(name = "indexed_at") val indexedAt: String? = null,
+    @Json(name = "source_type") val sourceType: String = "r2_upload",
+    @Json(name = "source_url") val sourceUrl: String? = null,
     @Json(name = "page_count") val pageCount: Int? = null,
 )
 
@@ -168,15 +175,43 @@ data class RegisterDocumentRequestDto(
     val documentNumber: String? = null,
     val documentType: String,
     val issuingAuthority: String,
+    val authorityRank: Int? = null,
     val objectKey: String,
     val fileSha256: String,
-    val zoneId: String,
+    val scopeLevel: String = "DEPARTMENT",
+    val zoneId: String? = null,
     val divisionId: String? = null,
     val departmentId: String? = null,
     val issueDate: String? = null,
     val effectiveDate: String? = null,
     val requiresOcr: Boolean = false,
     val supersedesDocumentId: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class ImportDrivePdfRequestDto(
+    val driveUrl: String,
+    val title: String,
+    val documentNumber: String? = null,
+    val documentType: String,
+    val issuingAuthority: String,
+    val authorityRank: Int? = null,
+    val scopeLevel: String = "DEPARTMENT",
+    val zoneId: String? = null,
+    val zoneCode: String = "WR",
+    val divisionId: String? = null,
+    val divisionCode: String? = null,
+    val departmentId: String? = null,
+    val departmentCode: String? = null,
+    val issueDate: String? = null,
+    val effectiveDate: String? = null,
+    val requiresOcr: Boolean = false,
+    val supersedesDocumentId: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class ReprocessDocumentRequestDto(
+    val forceOcr: Boolean = false,
 )
 
 @JsonClass(generateAdapter = true)

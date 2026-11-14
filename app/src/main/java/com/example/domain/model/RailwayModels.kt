@@ -151,16 +151,31 @@ data class BackendHealth(
     val message: String,
 )
 
+enum class ScopeLevel(val apiValue: String, val label: String) {
+    DEPARTMENT("DEPARTMENT", "Selected Department"),
+    DIVISION("DIVISION", "Selected Division (All Depts)"),
+    ZONE("ZONE", "Zone-Wide"),
+    RAILWAY_BOARD("RAILWAY_BOARD", "Railway Board"),
+    COMMON("COMMON", "Common Railway Rules"),
+}
+
 data class AdminDocumentItem(
     val id: String,
     val title: String,
     val documentNumber: String?,
     val documentType: String,
     val issuingAuthority: String,
+    val authorityRank: Int = 50,
     val status: String,
     val issueDate: String?,
     val effectiveDate: String?,
     val requiresOcr: Boolean,
     val ocrStatus: String,
+    val ingestionStatus: String = "pending",
+    val ingestionError: String? = null,
+    val chunkCount: Int = 0,
+    val indexedAt: String? = null,
+    val sourceType: String = "r2_upload",
+    val sourceUrl: String? = null,
     val pageCount: Int?,
 )
