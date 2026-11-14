@@ -19,7 +19,7 @@ android {
     versionCode = 1
     versionName = "1.0"
 
-    buildConfigField("String", "DEFAULT_BACKEND_BASE_URL", "\"http://10.0.2.2:8000/\"")
+    buildConfigField("String", "DEFAULT_BACKEND_BASE_URL", "\"https://railway-rules-backend.onrender.com/\"")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
