@@ -1,0 +1,20 @@
+<resources>
+    <string name="app_name">Railway Rules AI Assistant</string>
+    <string name="app_subtitle_hi">भारतीय रेल नियम सहायक</string>
+    <string name="opening_title">Configure Rule Scope</string>
+    <string name="opening_subtitle">Select your Railway Zone, Division, and Department to search official manuals, circulars, and amendments.</string>
+    <string name="label_zone">Railway Zone</string>
+    <string name="label_division">Division</string>
+    <string name="label_department">Department</string>
+    <string name="cta_open_chat">Open Rules AI Chat</string>
+    <string name="new_chat">New Chat</string>
+    <string name="chat_history">Chat History</string>
+    <string name="copy_answer">Copy Answer</string>
+    <string name="copied_to_clipboard">Answer and citations copied to clipboard</string>
+    <string name="ask_placeholder">Ask a Railway rule question in English or हिन्दी…</string>
+    <string name="send_question">Send question</string>
+    <string name="search_hierarchy_title">5-Tier Search Hierarchy &amp; Legal Authority</string>
+    <string name="server_settings_title">Backend Server Connection</string>
+    <string name="account_title">Employee Account</string>
+    <string name="admin_panel_title">Admin Document Console</string>
+</resources>
