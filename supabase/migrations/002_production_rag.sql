@@ -111,12 +111,19 @@ alter table public.documents
 
 -- Backfill r2_object_key from any legacy path column if present and r2_object_key is null
 do $$
+declare
+    v_con record;
 begin
     if exists (
         select 1 from information_schema.columns
         where table_schema = 'public' and table_name = 'documents' and column_name = 'r2_key'
     ) then
         execute 'update public.documents set r2_object_key = r2_key where r2_object_key is null and r2_key is not null';
+    elsif exists (
+        select 1 from information_schema.columns
+        where table_schema = 'public' and table_name = 'documents' and column_name = 'object_key'
+    ) then
+        execute 'update public.documents set r2_object_key = object_key where r2_object_key is null and object_key is not null';
     elsif exists (
         select 1 from information_schema.columns
         where table_schema = 'public' and table_name = 'documents' and column_name = 'file_path'
@@ -128,6 +135,40 @@ begin
     ) then
         execute 'update public.documents set r2_object_key = storage_path where r2_object_key is null and storage_path is not null';
     end if;
+
+    -- Safely drop legacy documents_status_check (and any single-column CHECK on documents.status)
+    -- without touching or deleting any existing documents rows.
+    alter table public.documents drop constraint if exists documents_status_check;
+    for v_con in
+        select distinct c.conname
+        from pg_constraint c
+        join pg_attribute a
+          on a.attrelid = c.conrelid
+         and a.attnum = any(c.conkey)
+        where c.conrelid = 'public.documents'::regclass
+          and c.contype = 'c'
+          and array_length(c.conkey, 1) = 1
+          and a.attname = 'status'
+    loop
+        execute format('alter table public.documents drop constraint if exists %I', v_con.conname);
+    end loop;
+
+    -- Preserve all valid existing statuses (draft, in_review, published, superseded, archived, disabled);
+    -- only normalize NULL or unrecognized values so the updated check constraint never fails.
+    update public.documents
+    set status = case
+        when lower(trim(coalesce(status, ''))) in ('draft', 'in_review', 'published', 'superseded', 'archived', 'disabled')
+            then lower(trim(status))
+        when lower(trim(coalesce(status, ''))) = 'active'
+            then 'published'
+        else 'draft'
+    end
+    where status is null
+       or status not in ('draft', 'in_review', 'published', 'superseded', 'archived', 'disabled');
+
+    alter table public.documents
+        add constraint documents_status_check
+        check (status in ('draft', 'in_review', 'published', 'superseded', 'archived', 'disabled'));
 
     if not exists (
         select 1 from pg_constraint
@@ -531,25 +572,28 @@ $$;
 revoke all on function public.is_admin() from public;
 grant execute on function public.is_admin() to authenticated, service_role;
 
--- Trigger defense-in-depth: block non-service_role sessions from setting or changing profiles.role
+-- Trigger defense-in-depth (SECURITY INVOKER so current_user is never elevated):
+-- Only privileged database roles may set non-employee role on INSERT or alter role on UPDATE.
+-- Never bypass based on auth.uid() is null.
 create or replace function public.prevent_profile_role_escalation()
 returns trigger
 language plpgsql
-security definer
 set search_path = public
 as $$
+declare
+    v_active_role text;
 begin
-    -- Allow Postgres SQL Editor / service_role backend operations
-    if current_setting('role', true) in ('service_role', 'postgres', 'supabase_admin')
-       or auth.uid() is null then
+    v_active_role := coalesce(nullif(current_setting('role', true), 'none'), current_user::text);
+
+    if current_user::text in ('service_role', 'postgres', 'supabase_admin', 'supabase_auth_admin')
+       or v_active_role in ('service_role', 'postgres', 'supabase_admin', 'supabase_auth_admin') then
         return new;
     end if;
 
     if tg_op = 'INSERT' then
-        if coalesce(new.role, 'employee') <> 'employee' then
+        if new.role is distinct from 'employee' then
             raise exception 'Unauthorized: new profiles can only be created with role=employee';
         end if;
-        new.role := 'employee';
         return new;
     end if;
 
@@ -570,7 +614,9 @@ create trigger trg_prevent_profile_role_escalation
     for each row
     execute function public.prevent_profile_role_escalation();
 
--- Remove ALL legacy policies on public.profiles (including any permissive self-update policy)
+-- Remove ALL legacy policies on public.profiles (including "Users can update own profile" / "Users update own profile")
+drop policy if exists "Users can update own profile" on public.profiles;
+drop policy if exists "Users update own profile" on public.profiles;
 do $$
 declare pol record;
 begin

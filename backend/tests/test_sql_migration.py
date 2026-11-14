@@ -94,6 +94,12 @@ class ProductionRagSqlMigrationTests(unittest.TestCase):
         self.assertLess(add_doc_num_pos, idx_doc_num_pos)
 
         # Legacy values normalized before adding check constraints
+        norm_status_pos = self.sql_lower.index("drop constraint if exists documents_status_check")
+        chk_status_pos = self.sql_lower.index("add constraint documents_status_check")
+        self.assertLess(norm_status_pos, chk_status_pos)
+        for st in ("draft", "in_review", "published", "superseded", "archived", "disabled"):
+            self.assertIn(f"'{st}'", self.sql_lower[chk_status_pos : chk_status_pos + 220])
+
         norm_ing_pos = self.sql_lower.index("when lower(coalesce(ingestion_status")
         chk_ing_pos = self.sql_lower.index("add constraint chk_documents_ingestion_status")
         self.assertLess(norm_ing_pos, chk_ing_pos)
@@ -168,14 +174,23 @@ class ProductionRagSqlMigrationTests(unittest.TestCase):
         self.assertIn("to authenticated, service_role", fn_block)
 
     def test_08_profiles_rbac_prevents_role_escalation(self):
-        # Drops all old permissive policies on profiles dynamically
+        # Drops legacy self-update policies explicitly and dynamically
+        self.assertIn('drop policy if exists "users can update own profile" on public.profiles', self.sql_lower)
+        self.assertIn('drop policy if exists "users update own profile" on public.profiles', self.sql_lower)
         self.assertIn("from pg_policies", self.sql_lower)
         self.assertIn("tablename = 'profiles'", self.sql_lower)
         self.assertIn("drop policy if exists %i on public.profiles", self.sql_lower)
 
-        # Trigger + helper function lock down self-promotion to admin
+        # Trigger + helper function lock down self-promotion to admin without auth.uid() IS NULL bypass
         self.assertIn("create or replace function public.is_admin()", self.sql_lower)
-        self.assertIn("create or replace function public.prevent_profile_role_escalation()", self.sql_lower)
+        trig_start = self.sql_lower.index("create or replace function public.prevent_profile_role_escalation()")
+        trig_end = self.sql_lower.index("create trigger trg_prevent_profile_role_escalation")
+        trig_body = self.sql_lower[trig_start:trig_end]
+        self.assertNotIn("auth.uid() is null", trig_body)
+        self.assertNotIn("security definer", trig_body)
+        for priv_role in ("service_role", "postgres", "supabase_admin", "supabase_auth_admin"):
+            self.assertIn(f"'{priv_role}'", trig_body)
+
         self.assertIn("create trigger trg_prevent_profile_role_escalation", self.sql_lower)
         self.assertIn("with check (auth.uid() = id and role = 'employee')", self.sql_lower)
 
