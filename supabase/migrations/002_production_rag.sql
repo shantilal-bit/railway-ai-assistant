@@ -648,10 +648,7 @@ create policy "Users update own profile without role change"
     on public.profiles
     for update to authenticated
     using (auth.uid() = id)
-    with check (
-        auth.uid() = id
-        and role = (select p.role from public.profiles p where p.id = auth.uid())
-    );
+    with check (auth.uid() = id);
 
 -- Documents, Document Scopes, Rule Chunks, Amendments RLS policies
 drop policy if exists "Authenticated read published docs" on public.documents;

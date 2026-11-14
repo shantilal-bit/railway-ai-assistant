@@ -206,6 +206,25 @@ class ProductionRagSqlMigrationTests(unittest.TestCase):
                 f"Unbalanced PostgreSQL dollar-quote delimiter {tag}: count={cnt}",
             )
 
+    def test_10_profiles_update_policy_has_no_self_referencing_subquery(self):
+        policy_start = self.sql_lower.index('create policy "users update own profile without role change"')
+        policy_end = self.sql_lower.index(";", policy_start) + 1
+        update_policy_sql = self.sql_lower[policy_start:policy_end]
+
+        self.assertIn("for update to authenticated", update_policy_sql)
+        self.assertIn("using (auth.uid() = id)", update_policy_sql)
+        self.assertIn("with check (auth.uid() = id);", update_policy_sql)
+        self.assertNotIn("from public.profiles", update_policy_sql)
+        self.assertNotIn("select ", update_policy_sql)
+
+        # Confirm BEFORE INSERT OR UPDATE trigger remains responsible for blocking role escalation
+        trig_start = self.sql_lower.index("create or replace function public.prevent_profile_role_escalation()")
+        trig_end = self.sql_lower.index("create trigger trg_prevent_profile_role_escalation")
+        trig_body = self.sql_lower[trig_start:trig_end]
+        self.assertIn("new.role is distinct from old.role", trig_body)
+        self.assertIn("new.role is distinct from 'employee'", trig_body)
+        self.assertIn("before insert or update on public.profiles", self.sql_lower)
+
 
 if __name__ == "__main__":
     unittest.main()
