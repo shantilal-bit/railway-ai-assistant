@@ -182,7 +182,7 @@ fun AuthScreen(
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             Text(
-                                text = "Supabase Auth via Secure Backend API",
+                                text = "Official Railway Employee Sign In",
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.primary,
                             )

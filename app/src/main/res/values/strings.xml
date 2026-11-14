@@ -14,7 +14,7 @@
     <string name="ask_placeholder">Ask a Railway rule question in English or हिन्दी…</string>
     <string name="send_question">Send question</string>
     <string name="search_hierarchy_title">5-Tier Search Hierarchy &amp; Legal Authority</string>
-    <string name="server_settings_title">Backend Server Connection</string>
+    <string name="server_settings_title">Connection Settings</string>
     <string name="account_title">Employee Account</string>
     <string name="admin_panel_title">Admin Document Console</string>
 </resources>

@@ -3,7 +3,6 @@ package com.example.data
 import android.app.Application
 import com.example.core.config.AppPreferences
 import com.example.data.local.RailwayDatabase
-import com.example.data.remote.GeminiRulesDataSource
 import com.example.data.remote.NetworkModule
 import com.example.data.repository.AdminRepository
 import com.example.data.repository.AuthRepository
@@ -16,7 +15,6 @@ class AppContainer(application: Application) {
     val moshi = NetworkModule.createMoshi()
     val okHttpClient = NetworkModule.createOkHttpClient(preferences)
     val apiService = NetworkModule.createApiService(okHttpClient = okHttpClient, moshi = moshi)
-    val geminiDataSource = GeminiRulesDataSource(moshi = moshi)
 
     val taxonomyRepository = TaxonomyRepository(
         dao = database.railwayDao(),
@@ -27,7 +25,6 @@ class AppContainer(application: Application) {
     val chatRepository = ChatRepository(
         dao = database.railwayDao(),
         apiService = apiService,
-        geminiDataSource = geminiDataSource,
         moshi = moshi,
     )
 

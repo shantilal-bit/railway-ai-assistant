@@ -296,7 +296,7 @@ fun OpeningScreen(
                                         } else {
                                             Icons.Filled.CloudOff
                                         },
-                                        contentDescription = "Backend server status",
+                                        contentDescription = "Service connection status",
                                         tint = if (state.backendHealth?.isConnected == true) {
                                             RailSignalGreen
                                         } else {
@@ -307,9 +307,9 @@ fun OpeningScreen(
                                     Spacer(modifier = Modifier.width(5.dp))
                                     Text(
                                         text = if (state.backendHealth?.isConnected == true) {
-                                            "API Online"
+                                            "Online"
                                         } else {
-                                            "Server Setup"
+                                            "Connection"
                                         },
                                         style = MaterialTheme.typography.labelSmall,
                                         color = if (state.backendHealth?.isConnected == true) {
@@ -465,7 +465,7 @@ fun OpeningScreen(
                                         Text("Retry Sync")
                                     }
                                     TextButton(onClick = { showServerDialog = true }) {
-                                        Text("Server URL")
+                                        Text("Connection")
                                     }
                                     TextButton(onClick = { viewModel.dismissSyncMessage() }) {
                                         Text("Dismiss")
@@ -509,7 +509,7 @@ fun OpeningScreen(
                 SectionCard(
                     stepNumber = "1",
                     title = stringResource(R.string.label_zone),
-                    subtitle = "Synced live from Supabase via /v1/taxonomy",
+                    subtitle = "Official Indian Railway Zones catalog",
                 ) {
                     ExposedDropdownMenuBox(
                         expanded = zoneMenuExpanded,
@@ -534,9 +534,9 @@ fun OpeningScreen(
                             placeholder = {
                                 Text(
                                     text = if (state.isSyncing) {
-                                        "Loading zones from backend…"
+                                        "Loading Railway Zones…"
                                     } else if (state.zones.isEmpty()) {
-                                        "No active zones cached — sync with backend"
+                                        "No active zones available — tap Sync Catalog"
                                     } else {
                                         "Choose a Railway Zone"
                                     },
@@ -683,9 +683,9 @@ fun OpeningScreen(
                             placeholder = {
                                 Text(
                                     text = if (state.isSyncing) {
-                                        "Loading departments from backend…"
+                                        "Loading departments…"
                                     } else if (state.departments.isEmpty()) {
-                                        "No active departments cached — sync with backend"
+                                        "No active departments available — tap Sync Catalog"
                                     } else {
                                         "Choose a Department"
                                     },

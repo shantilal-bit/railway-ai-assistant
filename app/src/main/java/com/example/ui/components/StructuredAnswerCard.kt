@@ -4,8 +4,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,7 +23,6 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.WarningAmber
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -52,7 +49,6 @@ import com.example.ui.theme.RailSignalGreen
 import com.example.ui.theme.RailSignalGreenContainer
 import com.example.ui.theme.fontFamilyForText
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun StructuredAnswerCard(
     answer: StructuredRuleAnswer,
@@ -278,23 +274,6 @@ fun StructuredAnswerCard(
                             SourceCitationItem(citation = citation)
                         }
                     }
-                }
-            }
-
-            if (!answer.aiProvider.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(10.dp))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AssistChip(
-                        onClick = {},
-                        enabled = false,
-                        label = {
-                            Text(
-                                text = "Provider: ${answer.aiProvider.uppercase()}" +
-                                    (answer.modelName?.let { " ($it)" } ?: ""),
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                        },
-                    )
                 }
             }
         }

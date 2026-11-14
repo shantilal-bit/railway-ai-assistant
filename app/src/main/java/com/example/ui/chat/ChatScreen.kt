@@ -1,8 +1,5 @@
 package com.example.ui.chat
 
-import android.provider.OpenableColumns
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -33,17 +30,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AddComment
-import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MenuBook
-import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -53,7 +45,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.InputChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -77,7 +68,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -86,7 +76,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
-import com.example.domain.model.AiEngineMode
 import com.example.domain.model.ChatMessage
 import com.example.domain.model.ChatSession
 import com.example.domain.model.MessageSender
@@ -109,7 +98,6 @@ fun ChatScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val clipboardManager = LocalClipboardManager.current
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
@@ -118,21 +106,6 @@ fun ChatScreen(
     var showServerDialog by remember { mutableStateOf(false) }
 
     val copiedText = stringResource(R.string.copied_to_clipboard)
-
-    val pdfPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument(),
-    ) { uri ->
-        if (uri != null) {
-            var displayName = "official_rule.pdf"
-            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (cursor.moveToFirst() && idx >= 0) {
-                    displayName = cursor.getString(idx) ?: displayName
-                }
-            }
-            viewModel.attachPdf(uri, displayName)
-        }
-    }
 
     LaunchedEffect(state.messages.size) {
         if (state.messages.isNotEmpty()) {
@@ -267,65 +240,17 @@ fun ChatScreen(
                                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = if (state.engineMode == AiEngineMode.GEMINI_FIREBASE) {
-                                        "Analyzing with Gemini 3.8 Flash via Firebase AI Logic…"
-                                    } else {
-                                        "Searching official PDFs across 5 tiers & verifying amendments…"
-                                    },
+                                    text = "Searching official Railway PDFs across 5 tiers & verifying amendments…",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                             }
                         }
 
-                        if (state.engineMode == AiEngineMode.GEMINI_FIREBASE && state.attachedPdfName != null) {
-                            InputChip(
-                                selected = true,
-                                onClick = { viewModel.clearAttachedPdf() },
-                                label = {
-                                    Text(
-                                        text = "PDF: ${state.attachedPdfName}",
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Filled.PictureAsPdf,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                },
-                                trailingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Filled.Close,
-                                        contentDescription = "Remove attached PDF",
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                },
-                                modifier = Modifier.padding(bottom = 6.dp),
-                            )
-                        }
-
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.Bottom,
                         ) {
-                            if (state.engineMode == AiEngineMode.GEMINI_FIREBASE) {
-                                IconButton(
-                                    onClick = { pdfPickerLauncher.launch(arrayOf("application/pdf")) },
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .testTag("attach_pdf_button"),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.AttachFile,
-                                        contentDescription = "Attach official Railway PDF for Gemini analysis",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                    )
-                                }
-                            }
-
                             OutlinedTextField(
                                 value = state.draftInput,
                                 onValueChange = viewModel::onDraftChanged,
@@ -345,7 +270,7 @@ fun ChatScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Surface(
-                                onClick = { viewModel.sendQuestion(context.contentResolver) },
+                                onClick = { viewModel.sendQuestion() },
                                 enabled = state.draftInput.isNotBlank() && !state.isGenerating,
                                 shape = RoundedCornerShape(14.dp),
                                 color = if (state.draftInput.isNotBlank() && !state.isGenerating) {
@@ -393,7 +318,7 @@ fun ChatScreen(
                     .widthIn(max = 680.dp)
                     .fillMaxSize(),
             ) {
-                // AI Engine + Language selector + Hierarchy info strip
+                // Language selector + Search Hierarchy info strip
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
                     border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -413,28 +338,19 @@ fun ChatScreen(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 modifier = Modifier.weight(1f),
                             ) {
-                                AiEngineMode.entries.forEach { mode ->
+                                QueryLanguage.entries.forEach { lang ->
                                     FilterChip(
-                                        selected = state.engineMode == mode,
-                                        onClick = { viewModel.setEngineMode(mode) },
-                                        leadingIcon = {
-                                            Icon(
-                                                imageVector = if (mode == AiEngineMode.GEMINI_FIREBASE) {
-                                                    Icons.Filled.AutoAwesome
-                                                } else {
-                                                    Icons.Filled.Dns
-                                                },
-                                                contentDescription = null,
-                                                modifier = Modifier.size(15.dp),
-                                            )
-                                        },
+                                        selected = state.queryLanguage == lang,
+                                        onClick = { viewModel.setQueryLanguage(lang) },
                                         label = {
                                             Text(
-                                                text = mode.label,
-                                                style = MaterialTheme.typography.labelSmall,
+                                                text = lang.label,
+                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                    fontFamily = fontFamilyForText(lang.label),
+                                                ),
                                             )
                                         },
-                                        modifier = Modifier.testTag("engine_chip_${mode.name.lowercase()}"),
+                                        modifier = Modifier.testTag("lang_chip_${lang.code}"),
                                     )
                                 }
                             }
@@ -451,25 +367,7 @@ fun ChatScreen(
                             }
                         }
 
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            QueryLanguage.entries.forEach { lang ->
-                                FilterChip(
-                                    selected = state.queryLanguage == lang,
-                                    onClick = { viewModel.setQueryLanguage(lang) },
-                                    label = {
-                                        Text(
-                                            text = lang.label,
-                                            style = MaterialTheme.typography.labelSmall.copy(
-                                                fontFamily = fontFamilyForText(lang.label),
-                                            ),
-                                        )
-                                    },
-                                    modifier = Modifier.testTag("lang_chip_${lang.code}"),
-                                )
-                            }
-                        }
-
-                        if (state.engineMode == AiEngineMode.BACKEND_RAG && state.backendHealth?.isConnected == false) {
+                        if (state.backendHealth?.isConnected == false) {
                             Surface(
                                 shape = MaterialTheme.shapes.small,
                                 color = MaterialTheme.colorScheme.tertiaryContainer,
@@ -490,7 +388,7 @@ fun ChatScreen(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "Backend RAG offline (${state.backendBaseUrl}). Tap to configure, or use Gemini AI (Firebase).",
+                                        text = "Rules service offline (${state.backendBaseUrl}). Tap to check connection.",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onTertiaryContainer,
                                     )
@@ -505,7 +403,6 @@ fun ChatScreen(
                     ChatEmptyState(
                         divisionName = state.activeSession?.divisionName ?: "Western Railway",
                         departmentName = state.activeSession?.departmentName ?: "Department",
-                        engineMode = state.engineMode,
                         onSelectQuestion = { viewModel.setPromptSuggestion(it) },
                         modifier = Modifier
                             .weight(1f)
@@ -543,14 +440,13 @@ fun ChatScreen(
 private fun ChatEmptyState(
     divisionName: String,
     departmentName: String,
-    engineMode: AiEngineMode,
     onSelectQuestion: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val starterQuestions = remember(divisionName, departmentName) {
         listOf(
             "Explain the 7-part structure and what I should verify in an official Railway Board leave rule circular.",
-            "Summarize the attached Railway PDF circular and list the rule number, effective date, and page numbers.",
+            "What are the leave entitlements and rules for Railway employees under IREC / Liberalised Leave Rules?",
             "रेलवे कर्मचारियों के लिए चिकित्सा परीक्षण (Medical Category) और अवकाश नियमों की मुख्य बातें क्या हैं?",
             "DAR (Discipline & Appeal Rules) के तहत मेजर पेनल्टी चार्जशीट (SF-5) की प्रक्रिया समझाइए।",
         )
@@ -585,11 +481,7 @@ private fun ChatEmptyState(
                         )
                     }
                     Text(
-                        text = if (engineMode == AiEngineMode.GEMINI_FIREBASE) {
-                            "Gemini AI (Firebase) is active. Ask questions in English or हिन्दी, and optionally tap the paperclip button below to attach an official Railway PDF (up to 18 MB) so Gemini can cite exact rule numbers and PDF page numbers."
-                        } else {
-                            "Backend RAG mode is active. Questions search your Supabase pgvector database across the 5-tier hierarchy and Cloudflare R2 manuals."
-                        },
+                        text = "Ask questions in English or हिन्दी. Answers search official Railway manuals, circulars, and amendments across the 5-tier hierarchy.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -707,7 +599,7 @@ private fun ChatMessageRow(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "AI / Connection Error Notice",
+                            text = "Service Connection Notice",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                         )
@@ -720,7 +612,7 @@ private fun ChatMessageRow(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedButton(onClick = onOpenServerSettings) {
-                        Text("Server Settings")
+                        Text("Connection Settings")
                     }
                 }
             }

@@ -3,7 +3,7 @@
 Handles:
 - Supabase Auth & Postgres/pgvector queries
 - 5-tier search hierarchy with legal authority & supersession comparison
-- Provider-agnostic AI synthesis (Groq default, OpenAI/Gemini swappable)
+- Groq AI synthesis via AIProvider abstraction
 - Cloudflare R2 presigned PDF uploads & OCR ingestion for Admin Console
 - Rate limiting & RBAC enforcement
 """

@@ -8,7 +8,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.example.core.firebase.configureAppCheck
 import com.example.ui.admin.AdminScreen
 import com.example.ui.admin.AdminViewModel
 import com.example.ui.auth.AuthScreen
@@ -29,7 +28,6 @@ object Routes {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        configureAppCheck(this, intent)
         enableEdgeToEdge()
         val container = (application as RailwayRulesApp).container
 

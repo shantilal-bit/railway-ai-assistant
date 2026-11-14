@@ -1,10 +1,5 @@
 package com.example.domain.model
 
-enum class AiEngineMode(val label: String) {
-    GEMINI_FIREBASE("Gemini AI (Firebase)"),
-    BACKEND_RAG("Backend RAG"),
-}
-
 enum class QueryLanguage(val code: String, val label: String) {
     AUTO("auto", "Auto (EN / हिन्दी)"),
     ENGLISH("en", "English"),

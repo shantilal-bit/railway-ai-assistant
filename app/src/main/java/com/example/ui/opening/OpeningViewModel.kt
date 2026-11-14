@@ -164,9 +164,9 @@ class OpeningViewModel(
             },
             onFailure = { error ->
                 syncError.value = buildString {
-                    append("Taxonomy sync failed: ")
+                    append("Unable to refresh Railway catalog: ")
                     append(error.localizedMessage ?: error.javaClass.simpleName)
-                    append(". Showing offline Room cache if available.")
+                    append(". Showing saved offline list if available.")
                 }
             },
         )

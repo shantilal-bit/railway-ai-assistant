@@ -71,13 +71,13 @@ class TaxonomyRepository(
                 aiProvider = health.aiProvider,
                 database = health.database,
                 storage = health.storage,
-                message = "Connected (${health.aiProvider ?: "backend"} • ${health.database ?: "pgvector"})",
+                message = "Connected • Official Rules Service",
             )
         } catch (e: Exception) {
             BackendHealth(
                 isConnected = false,
                 baseUrl = url,
-                message = e.localizedMessage ?: "Backend server unreachable",
+                message = e.localizedMessage ?: "Rules service unreachable",
             )
         }
     }

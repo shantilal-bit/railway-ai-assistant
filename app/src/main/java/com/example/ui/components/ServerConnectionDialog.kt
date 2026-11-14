@@ -46,14 +46,14 @@ fun ServerConnectionDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "Backend API Connection",
+                text = "Rules Service Connection",
                 style = MaterialTheme.typography.titleLarge,
             )
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    text = "All AI provider keys (Groq/OpenAI/Gemini), Supabase credentials, and Cloudflare R2 secrets stay exclusively on your backend server.",
+                    text = "Connect to your organization's Railway Rules service. All credentials and official document storage remain securely on the server.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -61,7 +61,7 @@ fun ServerConnectionDialog(
                 OutlinedTextField(
                     value = urlInput,
                     onValueChange = { urlInput = it },
-                    label = { Text("Backend Base URL") },
+                    label = { Text("Service URL") },
                     placeholder = { Text("https://api.yourdomain.com/") },
                     singleLine = true,
                     modifier = Modifier

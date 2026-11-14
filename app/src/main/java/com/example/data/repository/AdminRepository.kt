@@ -72,7 +72,7 @@ class AdminRepository(
             okHttpClient.newCall(putRequest).execute().use { resp ->
                 if (!resp.isSuccessful) {
                     return@withContext Result.failure(
-                        IllegalStateException("Cloudflare R2 upload failed (HTTP ${resp.code})"),
+                        IllegalStateException("Document upload failed (HTTP ${resp.code})"),
                     )
                 }
             }

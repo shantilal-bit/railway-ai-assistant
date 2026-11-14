@@ -62,7 +62,7 @@ class AuthViewModel(
                 },
                 onFailure = {
                     isError.value = true
-                    statusMessage.value = it.localizedMessage ?: "Sign in failed. Verify Backend & Supabase Auth."
+                    statusMessage.value = it.localizedMessage ?: "Sign in failed. Please check your credentials and connection."
                 },
             )
             isLoading.value = false

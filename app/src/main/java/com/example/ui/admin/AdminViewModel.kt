@@ -114,7 +114,7 @@ class AdminViewModel(
         viewModelScope.launch {
             isLoading.value = true
             isError.value = false
-            statusMessage.value = "Uploading PDF to Cloudflare R2 and registering metadata…"
+            statusMessage.value = "Uploading official PDF and registering metadata…"
             adminRepository.uploadPdfAndRegister(
                 contentResolver = contentResolver,
                 pdfUri = pdfUri,

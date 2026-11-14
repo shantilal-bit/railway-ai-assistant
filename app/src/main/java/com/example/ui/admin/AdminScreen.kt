@@ -175,7 +175,7 @@ fun AdminScreen(
                                 )
                             }
                             Text(
-                                text = "Only authorized Railway Administrators (profiles.role = 'admin' in Supabase) can upload PDFs to Cloudflare R2, trigger OCR processing, add amendment relationships, publish documents, or disable outdated circulars.",
+                                text = "Only authorized Railway Administrators can upload official PDFs, enable document scanning, add amendment relationships, publish circulars, or disable outdated records.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -204,7 +204,7 @@ fun AdminScreen(
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             Text(
-                                text = "Upload Official Railway PDF (Cloudflare R2)",
+                                text = "Upload Official Railway PDF",
                                 style = MaterialTheme.typography.titleMedium,
                             )
                             OutlinedButton(
@@ -331,7 +331,7 @@ fun AdminScreen(
                             ) {
                                 Icon(Icons.Filled.CloudUpload, contentDescription = null)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Upload to R2 & Register")
+                                Text("Upload & Register PDF")
                             }
                         }
                     }
