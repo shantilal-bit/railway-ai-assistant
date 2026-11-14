@@ -14,10 +14,13 @@ import com.example.domain.model.RailwayDivision
 import com.example.domain.model.RailwayZone
 import com.example.domain.model.UserProfile
 import com.example.domain.model.UserRole
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -34,6 +37,7 @@ data class AdminUiState(
     val isAdmin: Boolean get() = userProfile?.role == UserRole.ADMIN
 }
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class AdminViewModel(
     private val adminRepository: AdminRepository,
     private val authRepository: AuthRepository,
@@ -44,12 +48,16 @@ class AdminViewModel(
     private val isLoading = MutableStateFlow(false)
     private val statusMessage = MutableStateFlow<String?>(null)
     private val isError = MutableStateFlow(false)
-    private val selectedZoneId = MutableStateFlow("wr-zone-001")
+
+    private val defaultZoneDivisions = taxonomyRepository.allZones.flatMapLatest { zones ->
+        val firstZoneId = zones.firstOrNull()?.id
+        if (firstZoneId != null) taxonomyRepository.divisionsForZone(firstZoneId) else flowOf(emptyList())
+    }
 
     val uiState: StateFlow<AdminUiState> = combine(
         authRepository.currentUser,
         taxonomyRepository.allZones,
-        taxonomyRepository.divisionsForZone(selectedZoneId.value),
+        defaultZoneDivisions,
         taxonomyRepository.activeDepartments,
         combine(documents, isLoading, statusMessage, isError) { docs, loading, msg, err ->
             Quad(docs, loading, msg, err)

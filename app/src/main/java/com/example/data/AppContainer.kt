@@ -9,15 +9,10 @@ import com.example.data.repository.AdminRepository
 import com.example.data.repository.AuthRepository
 import com.example.data.repository.ChatRepository
 import com.example.data.repository.TaxonomyRepository
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 
 class AppContainer(application: Application) {
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
     val preferences = AppPreferences(application)
-    val database = RailwayDatabase.create(application, appScope)
+    val database = RailwayDatabase.create(application)
     val moshi = NetworkModule.createMoshi()
     val okHttpClient = NetworkModule.createOkHttpClient(preferences)
     val apiService = NetworkModule.createApiService(okHttpClient = okHttpClient, moshi = moshi)

@@ -32,24 +32,26 @@ import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Construction
 import androidx.compose.material.icons.filled.DirectionsRailway
 import androidx.compose.material.icons.filled.ElectricBolt
 import androidx.compose.material.icons.filled.Engineering
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.LocalHospital
+import androidx.compose.material.icons.filled.LocationCity
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SettingsInputAntenna
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Train
+import androidx.compose.material.icons.filled.WorkOutline
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -82,7 +84,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -111,6 +112,8 @@ fun OpeningScreen(
     var showServerDialog by remember { mutableStateOf(false) }
     var showHierarchySheet by remember { mutableStateOf(false) }
     var zoneMenuExpanded by remember { mutableStateOf(false) }
+    var divisionMenuExpanded by remember { mutableStateOf(false) }
+    var departmentMenuExpanded by remember { mutableStateOf(false) }
 
     if (showServerDialog) {
         ServerConnectionDialog(
@@ -142,7 +145,9 @@ fun OpeningScreen(
                     contentAlignment = Alignment.Center,
                 ) {
                     Column(
-                        modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(),
+                        modifier = Modifier
+                            .widthIn(max = 640.dp)
+                            .fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         if (state.canProceedToChat) {
@@ -229,7 +234,6 @@ fun OpeningScreen(
                                 ),
                             ),
                     )
-                    // Brass rail accent bar at bottom of hero
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
@@ -423,6 +427,56 @@ fun OpeningScreen(
                     }
                 }
 
+                // Clear Sync Error Banner when /v1/taxonomy fails
+                AnimatedVisibility(visible = state.syncError != null) {
+                    state.syncError?.let { errorMsg ->
+                        Surface(
+                            shape = MaterialTheme.shapes.medium,
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("sync_error_banner"),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Row(verticalAlignment = Alignment.Top) {
+                                    Icon(
+                                        imageVector = Icons.Filled.ErrorOutline,
+                                        contentDescription = "Sync error",
+                                        tint = MaterialTheme.colorScheme.secondary,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = errorMsg,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(
+                                        onClick = { viewModel.syncTaxonomy() },
+                                        enabled = !state.isSyncing,
+                                    ) {
+                                        Text("Retry Sync")
+                                    }
+                                    TextButton(onClick = { showServerDialog = true }) {
+                                        Text("Server URL")
+                                    }
+                                    TextButton(onClick = { viewModel.dismissSyncMessage() }) {
+                                        Text("Dismiss")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Sync Success Info Banner
                 AnimatedVisibility(visible = state.syncMessage != null) {
                     state.syncMessage?.let { msg ->
                         Surface(
@@ -451,27 +505,43 @@ fun OpeningScreen(
                     }
                 }
 
-                // 1. Railway Zone Selector
+                // 1. Railway Zone Dropdown
                 SectionCard(
                     stepNumber = "1",
                     title = stringResource(R.string.label_zone),
-                    subtitle = "Western Railway active initially; database-ready for all 17 Zones",
+                    subtitle = "Synced live from Supabase via /v1/taxonomy",
                 ) {
                     ExposedDropdownMenuBox(
                         expanded = zoneMenuExpanded,
-                        onExpandedChange = { zoneMenuExpanded = !zoneMenuExpanded },
+                        onExpandedChange = {
+                            if (state.zones.isNotEmpty()) {
+                                zoneMenuExpanded = !zoneMenuExpanded
+                            }
+                        },
                     ) {
                         OutlinedTextField(
                             value = state.selectedZone?.let { "${it.name} (${it.code})" } ?: "",
                             onValueChange = {},
                             readOnly = true,
+                            enabled = state.zones.isNotEmpty(),
                             leadingIcon = {
                                 Icon(Icons.Filled.Train, contentDescription = null)
                             },
                             trailingIcon = {
                                 Icon(Icons.Filled.ArrowDropDown, contentDescription = "Select zone")
                             },
-                            label = { Text("Active Railway Zone") },
+                            label = { Text("Select Railway Zone") },
+                            placeholder = {
+                                Text(
+                                    text = if (state.isSyncing) {
+                                        "Loading zones from backend…"
+                                    } else if (state.zones.isEmpty()) {
+                                        "No active zones cached — sync with backend"
+                                    } else {
+                                        "Choose a Railway Zone"
+                                    },
+                                )
+                            },
                             modifier = Modifier
                                 .menuAnchor(MenuAnchorType.PrimaryNotEditable)
                                 .fillMaxWidth()
@@ -507,47 +577,158 @@ fun OpeningScreen(
                     }
                 }
 
-                // 2. Division Selector
+                // 2. Division Dropdown (Only selected Zone's Divisions)
                 SectionCard(
                     stepNumber = "2",
                     title = stringResource(R.string.label_division),
-                    subtitle = "Select your operating division under ${state.selectedZone?.name ?: "Western Railway"}",
+                    subtitle = state.selectedZone?.let {
+                        "Divisions under ${it.name} (${it.code})"
+                    } ?: "Select a Railway Zone first to view its divisions",
                 ) {
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    val divisionEnabled = state.selectedZone != null && state.divisions.isNotEmpty()
+                    ExposedDropdownMenuBox(
+                        expanded = divisionMenuExpanded,
+                        onExpandedChange = {
+                            if (divisionEnabled) {
+                                divisionMenuExpanded = !divisionMenuExpanded
+                            }
+                        },
                     ) {
-                        state.divisions.forEach { division ->
-                            val selected = state.selectedDivision?.id == division.id
-                            SelectionPillCard(
-                                title = division.name,
-                                subtitle = division.nameHi ?: division.code,
-                                code = division.code,
-                                selected = selected,
-                                onClick = { viewModel.selectDivision(division) },
-                                modifier = Modifier.testTag("division_card_${division.code.lowercase()}"),
-                            )
+                        OutlinedTextField(
+                            value = state.selectedDivision?.let { "${it.name} (${it.code})" } ?: "",
+                            onValueChange = {},
+                            readOnly = true,
+                            enabled = divisionEnabled,
+                            leadingIcon = {
+                                Icon(Icons.Filled.LocationCity, contentDescription = null)
+                            },
+                            trailingIcon = {
+                                Icon(Icons.Filled.ArrowDropDown, contentDescription = "Select division")
+                            },
+                            label = { Text("Select Division") },
+                            placeholder = {
+                                Text(
+                                    text = when {
+                                        state.selectedZone == null -> "Select a Zone first"
+                                        state.divisions.isEmpty() -> "No active divisions for this Zone"
+                                        else -> "Choose a Division"
+                                    },
+                                )
+                            },
+                            modifier = Modifier
+                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                                .fillMaxWidth()
+                                .testTag("division_selector"),
+                        )
+                        ExposedDropdownMenu(
+                            expanded = divisionMenuExpanded,
+                            onDismissRequest = { divisionMenuExpanded = false },
+                        ) {
+                            state.divisions.forEach { division ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text("${division.name} (${division.code})")
+                                            division.nameHi?.let {
+                                                Text(
+                                                    text = it,
+                                                    style = MaterialTheme.typography.bodySmall.copy(
+                                                        fontFamily = DevanagariFontFamily,
+                                                    ),
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onClick = {
+                                        viewModel.selectDivision(division)
+                                        divisionMenuExpanded = false
+                                    },
+                                )
+                            }
                         }
                     }
                 }
 
-                // 3. Department Selector
+                // 3. Department Dropdown (All active Departments from Backend)
                 SectionCard(
                     stepNumber = "3",
                     title = stringResource(R.string.label_department),
                     subtitle = "Prioritizes your department first, while honoring Railway Board legal authority",
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        state.departments.forEach { dept ->
-                            val selected = state.selectedDepartment?.id == dept.id
-                            DepartmentSelectionRow(
-                                department = dept,
-                                selected = selected,
-                                icon = departmentIcon(dept.code),
-                                onClick = { viewModel.selectDepartment(dept) },
-                                modifier = Modifier.testTag("department_row_${dept.code.lowercase()}"),
-                            )
+                    ExposedDropdownMenuBox(
+                        expanded = departmentMenuExpanded,
+                        onExpandedChange = {
+                            if (state.departments.isNotEmpty()) {
+                                departmentMenuExpanded = !departmentMenuExpanded
+                            }
+                        },
+                    ) {
+                        OutlinedTextField(
+                            value = state.selectedDepartment?.let { "${it.name} (${it.code})" } ?: "",
+                            onValueChange = {},
+                            readOnly = true,
+                            enabled = state.departments.isNotEmpty(),
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = state.selectedDepartment?.let { departmentIcon(it.code) }
+                                        ?: Icons.Filled.WorkOutline,
+                                    contentDescription = null,
+                                )
+                            },
+                            trailingIcon = {
+                                Icon(Icons.Filled.ArrowDropDown, contentDescription = "Select department")
+                            },
+                            label = { Text("Select Department") },
+                            placeholder = {
+                                Text(
+                                    text = if (state.isSyncing) {
+                                        "Loading departments from backend…"
+                                    } else if (state.departments.isEmpty()) {
+                                        "No active departments cached — sync with backend"
+                                    } else {
+                                        "Choose a Department"
+                                    },
+                                )
+                            },
+                            modifier = Modifier
+                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                                .fillMaxWidth()
+                                .testTag("department_selector"),
+                        )
+                        ExposedDropdownMenu(
+                            expanded = departmentMenuExpanded,
+                            onDismissRequest = { departmentMenuExpanded = false },
+                        ) {
+                            state.departments.forEach { dept ->
+                                DropdownMenuItem(
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = departmentIcon(dept.code),
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                    },
+                                    text = {
+                                        Column {
+                                            Text("${dept.name} (${dept.code})")
+                                            dept.nameHi?.let {
+                                                Text(
+                                                    text = it,
+                                                    style = MaterialTheme.typography.bodySmall.copy(
+                                                        fontFamily = DevanagariFontFamily,
+                                                    ),
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onClick = {
+                                        viewModel.selectDepartment(dept)
+                                        departmentMenuExpanded = false
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -606,164 +787,6 @@ private fun SectionCard(
                 }
             }
             content()
-        }
-    }
-}
-
-@Composable
-private fun SelectionPillCard(
-    title: String,
-    subtitle: String,
-    code: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        onClick = onClick,
-        modifier = modifier,
-        shape = MaterialTheme.shapes.medium,
-        color = if (selected) {
-            MaterialTheme.colorScheme.primaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-        },
-        border = BorderStroke(
-            width = if (selected) 1.5.dp else 1.dp,
-            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-        ),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.labelLarge.copy(
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
-                    ),
-                    color = if (selected) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                )
-                Text(
-                    text = "$subtitle ($code)",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = DevanagariFontFamily,
-                    ),
-                    color = if (selected) {
-                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
-            if (selected) {
-                Spacer(modifier = Modifier.width(8.dp))
-                Icon(
-                    imageVector = Icons.Filled.Check,
-                    contentDescription = "Selected",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun DepartmentSelectionRow(
-    department: RailwayDepartment,
-    selected: Boolean,
-    icon: ImageVector,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        color = if (selected) {
-            MaterialTheme.colorScheme.primaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-        },
-        border = BorderStroke(
-            width = if (selected) 1.5.dp else 1.dp,
-            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-        ),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f),
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = if (selected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.surface
-                    },
-                    modifier = Modifier.size(36.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = null,
-                            tint = if (selected) {
-                                MaterialTheme.colorScheme.onPrimary
-                            } else {
-                                MaterialTheme.colorScheme.primary
-                            },
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = department.name,
-                        style = MaterialTheme.typography.titleSmall.copy(
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
-                        ),
-                        color = if (selected) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        },
-                    )
-                    department.nameHi?.let { hindi ->
-                        Text(
-                            text = hindi,
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontFamily = DevanagariFontFamily,
-                            ),
-                            color = if (selected) {
-                                MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        )
-                    }
-                }
-            }
-            if (selected) {
-                Icon(
-                    imageVector = Icons.Filled.Check,
-                    contentDescription = "Selected",
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-            }
         }
     }
 }

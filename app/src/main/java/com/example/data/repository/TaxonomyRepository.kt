@@ -4,7 +4,6 @@ import com.example.core.config.AppPreferences
 import com.example.data.local.DepartmentEntity
 import com.example.data.local.DivisionEntity
 import com.example.data.local.RailwayDao
-import com.example.data.local.RailwayDatabase
 import com.example.data.local.ZoneEntity
 import com.example.data.remote.RailwayRulesApiService
 import com.example.domain.model.BackendHealth
@@ -38,25 +37,24 @@ class TaxonomyRepository(
         list.map { RailwayDepartment(it.id, it.code, it.name, it.nameHi, it.isActive, it.sortOrder) }
     }
 
-    suspend fun ensureSeeded() {
-        RailwayDatabase.seedInitialTaxonomy(dao)
-    }
-
-    suspend fun syncFromBackend(includeInactiveZones: Boolean = true): Result<String> {
+    suspend fun syncFromBackend(includeInactiveZones: Boolean = false): Result<String> {
         return try {
             val dto = apiService.getTaxonomy(includeInactiveZones = includeInactiveZones)
             val zoneEntities = dto.zones.map {
                 ZoneEntity(it.id, it.code, it.name, it.nameHi, it.isActive, it.sortOrder)
             }
-            val divisionEntities = dto.divisions.map {
-                DivisionEntity(it.id, it.zoneId, it.code, it.name, it.nameHi, it.isActive, it.sortOrder)
-            }
+            val validZoneIds = zoneEntities.map { it.id }.toSet()
+            val divisionEntities = dto.divisions
+                .filter { it.zoneId in validZoneIds }
+                .map {
+                    DivisionEntity(it.id, it.zoneId, it.code, it.name, it.nameHi, it.isActive, it.sortOrder)
+                }
             val deptEntities = dto.departments.map {
                 DepartmentEntity(it.id, it.code, it.name, it.nameHi, it.isActive, it.sortOrder)
             }
             dao.replaceTaxonomy(zoneEntities, divisionEntities, deptEntities)
             Result.success(
-                "Synced ${zoneEntities.count { it.isActive }} active zones, ${divisionEntities.size} divisions, ${deptEntities.size} departments",
+                "Synced ${zoneEntities.size} zones, ${divisionEntities.size} divisions, ${deptEntities.size} departments",
             )
         } catch (e: Exception) {
             Result.failure(e)

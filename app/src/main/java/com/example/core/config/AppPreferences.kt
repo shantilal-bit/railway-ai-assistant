@@ -80,6 +80,14 @@ class AppPreferences(private val context: Context) {
         }
     }
 
+    suspend fun clearSelection() {
+        context.dataStore.edit { prefs ->
+            prefs.remove(Keys.SELECTED_ZONE_ID)
+            prefs.remove(Keys.SELECTED_DIVISION_ID)
+            prefs.remove(Keys.SELECTED_DEPARTMENT_ID)
+        }
+    }
+
     suspend fun saveQueryLanguage(language: QueryLanguage) {
         context.dataStore.edit { prefs ->
             prefs[Keys.QUERY_LANGUAGE] = language.code

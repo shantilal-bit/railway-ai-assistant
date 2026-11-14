@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
@@ -33,6 +34,7 @@ data class OpeningUiState(
     val userProfile: UserProfile? = null,
     val isSyncing: Boolean = false,
     val syncMessage: String? = null,
+    val syncError: String? = null,
 ) {
     val canProceedToChat: Boolean
         get() = selectedZone != null && selectedDivision != null && selectedDepartment != null
@@ -51,13 +53,9 @@ class OpeningViewModel(
     private val backendHealth = MutableStateFlow<BackendHealth?>(null)
     private val isSyncing = MutableStateFlow(false)
     private val syncMessage = MutableStateFlow<String?>(null)
+    private val syncError = MutableStateFlow<String?>(null)
 
-    private val divisionsFlow = combine(
-        taxonomyRepository.activeZones,
-        selectedZoneId,
-    ) { zones, chosenZoneId ->
-        chosenZoneId ?: zones.firstOrNull()?.id
-    }.flatMapLatest { zoneId ->
+    private val divisionsFlow = selectedZoneId.flatMapLatest { zoneId ->
         if (zoneId != null) taxonomyRepository.divisionsForZone(zoneId) else flowOf(emptyList())
     }
 
@@ -73,12 +71,12 @@ class OpeningViewModel(
             backendHealth,
             authRepository.currentUser,
             isSyncing,
-            syncMessage,
-        ) { url, health, user, syncing, msg ->
-            Quintuple(url, health, user, syncing, msg)
+            combine(syncMessage, syncError) { msg, err -> msg to err },
+        ) { url, health, user, syncing, status ->
+            Quintuple(url, health, user, syncing, status)
         },
     ) { zones, divisions, departments, selection, meta ->
-        val activeZone = zones.firstOrNull { it.id == selection.first } ?: zones.firstOrNull()
+        val activeZone = zones.firstOrNull { it.id == selection.first }
         val activeDivision = divisions.firstOrNull { it.id == selection.second }
         val activeDepartment = departments.firstOrNull { it.id == selection.third }
 
@@ -93,7 +91,8 @@ class OpeningViewModel(
             backendHealth = meta.second,
             userProfile = meta.third,
             isSyncing = meta.fourth,
-            syncMessage = meta.fifth,
+            syncMessage = meta.fifth.first,
+            syncError = meta.fifth.second,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -103,20 +102,15 @@ class OpeningViewModel(
 
     init {
         viewModelScope.launch {
-            taxonomyRepository.ensureSeeded()
-            preferences.selectionFlow.collect { saved ->
-                if (selectedZoneId.value == null && saved.zoneId != null) {
-                    selectedZoneId.value = saved.zoneId
-                }
-                if (selectedDivisionId.value == null && saved.divisionId != null) {
-                    selectedDivisionId.value = saved.divisionId
-                }
-                if (selectedDepartmentId.value == null && saved.departmentId != null) {
-                    selectedDepartmentId.value = saved.departmentId
-                }
-            }
+            // Restore cached selection for offline use before live sync runs
+            val saved = preferences.selectionFlow.first()
+            selectedZoneId.value = saved.zoneId
+            selectedDivisionId.value = saved.divisionId
+            selectedDepartmentId.value = saved.departmentId
+
+            // Automatically sync taxonomy from Backend /v1/taxonomy on app open
+            syncTaxonomyInternal()
         }
-        checkBackendHealth()
     }
 
     fun selectZone(zone: RailwayZone) {
@@ -149,24 +143,35 @@ class OpeningViewModel(
 
     fun syncTaxonomy() {
         viewModelScope.launch {
-            isSyncing.value = true
-            syncMessage.value = null
-            val result = taxonomyRepository.syncFromBackend()
-            syncMessage.value = result.fold(
-                onSuccess = { it },
-                onFailure = {
-                    "Sync unavailable (${it.javaClass.simpleName}). Using local Western Railway catalog."
-                },
-            )
-            backendHealth.value = taxonomyRepository.checkBackendHealth()
-            isSyncing.value = false
+            syncTaxonomyInternal()
         }
     }
 
-    fun checkBackendHealth() {
-        viewModelScope.launch {
-            backendHealth.value = taxonomyRepository.checkBackendHealth()
-        }
+    private suspend fun syncTaxonomyInternal() {
+        isSyncing.value = true
+        syncMessage.value = null
+        syncError.value = null
+
+        val result = taxonomyRepository.syncFromBackend(includeInactiveZones = false)
+        result.fold(
+            onSuccess = { summary ->
+                // Reset old selected IDs after sync so no stale/invalid selection remains
+                selectedZoneId.value = null
+                selectedDivisionId.value = null
+                selectedDepartmentId.value = null
+                preferences.clearSelection()
+                syncMessage.value = summary
+            },
+            onFailure = { error ->
+                syncError.value = buildString {
+                    append("Taxonomy sync failed: ")
+                    append(error.localizedMessage ?: error.javaClass.simpleName)
+                    append(". Showing offline Room cache if available.")
+                }
+            },
+        )
+        backendHealth.value = taxonomyRepository.checkBackendHealth()
+        isSyncing.value = false
     }
 
     fun updateBackendBaseUrl(newUrl: String) {
@@ -174,12 +179,13 @@ class OpeningViewModel(
         if (cleaned.isEmpty()) return
         viewModelScope.launch {
             preferences.saveBackendBaseUrl(cleaned)
-            backendHealth.value = taxonomyRepository.checkBackendHealth()
+            syncTaxonomyInternal()
         }
     }
 
     fun dismissSyncMessage() {
         syncMessage.value = null
+        syncError.value = null
     }
 
     private data class Quintuple<A, B, C, D, E>(

@@ -134,9 +134,20 @@ async def get_taxonomy(includeInactiveZones: bool = False):
     zones_q = sb.table("zones").select("*").order("sort_order")
     if not includeInactiveZones:
         zones_q = zones_q.eq("is_active", True)
-    zones = zones_q.execute().data
-    divisions = sb.table("divisions").select("*").eq("is_active", True).order("sort_order").execute().data
-    departments = sb.table("departments").select("*").eq("is_active", True).order("sort_order").execute().data
+    raw_zones = zones_q.execute().data or []
+    raw_divisions = (
+        sb.table("divisions").select("*").eq("is_active", True).order("sort_order").execute().data or []
+    )
+    raw_departments = (
+        sb.table("departments").select("*").eq("is_active", True).order("sort_order").execute().data or []
+    )
+
+    zones = [{**row, "id": str(row["id"])} for row in raw_zones]
+    divisions = [
+        {**row, "id": str(row["id"]), "zone_id": str(row["zone_id"])}
+        for row in raw_divisions
+    ]
+    departments = [{**row, "id": str(row["id"])} for row in raw_departments]
     return {"zones": zones, "divisions": divisions, "departments": departments}
 
 

@@ -2,5 +2,7 @@
   "name": "Railway Rules AI Assistant",
   "description": "AI-powered Indian Railway rules, manuals, and circulars assistant for railway employees (Western Railway & Railway Board).",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

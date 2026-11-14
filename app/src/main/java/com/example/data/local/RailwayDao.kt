@@ -25,6 +25,15 @@ interface RailwayDao {
     @Query("SELECT COUNT(*) FROM zones")
     suspend fun getZoneCount(): Int
 
+    @Query("DELETE FROM divisions")
+    suspend fun deleteAllDivisions()
+
+    @Query("DELETE FROM departments")
+    suspend fun deleteAllDepartments()
+
+    @Query("DELETE FROM zones")
+    suspend fun deleteAllZones()
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertZones(zones: List<ZoneEntity>)
 
@@ -40,6 +49,9 @@ interface RailwayDao {
         divisions: List<DivisionEntity>,
         departments: List<DepartmentEntity>,
     ) {
+        deleteAllDivisions()
+        deleteAllDepartments()
+        deleteAllZones()
         upsertZones(zones)
         upsertDivisions(divisions)
         upsertDepartments(departments)
