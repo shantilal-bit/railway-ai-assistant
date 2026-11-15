@@ -55,13 +55,21 @@ class R2PresignedUploadTest {
     }
 
     @Test
+    fun `BuildConfig DEFAULT_BACKEND_BASE_URL points to railway-ai-assistant-docker onrender`() {
+        assertEquals(
+            "https://railway-ai-assistant-docker.onrender.com/",
+            BuildConfig.DEFAULT_BACKEND_BASE_URL,
+        )
+    }
+
+    @Test
     fun `DynamicBaseUrlInterceptor and AuthInterceptor rewrite backend calls only and leave R2 URL untouched`() {
         val capturedRequests = mutableListOf<Request>()
         val backendClient = OkHttpClient.Builder()
             .addInterceptor(
                 DynamicBaseUrlInterceptor(
                     baseUrlProvider = { "https://custom-backend.example.com/" },
-                    defaultBaseUrlProvider = { "https://railway-rules-backend.onrender.com/" },
+                    defaultBaseUrlProvider = { "https://railway-ai-assistant-docker.onrender.com/" },
                 ),
             )
             .addInterceptor(
@@ -70,7 +78,7 @@ class R2PresignedUploadTest {
                     allowedHostsProvider = {
                         NetworkModule.resolveBackendHosts(
                             configuredBaseUrl = "https://custom-backend.example.com/",
-                            defaultBaseUrl = "https://railway-rules-backend.onrender.com/",
+                            defaultBaseUrl = "https://railway-ai-assistant-docker.onrender.com/",
                         )
                     },
                 ),
@@ -91,7 +99,7 @@ class R2PresignedUploadTest {
         // 1. Backend API call MUST rewrite host and add Authorization header
         backendClient.newCall(
             Request.Builder()
-                .url("https://railway-rules-backend.onrender.com/v1/admin/documents/presign-upload")
+                .url("https://railway-ai-assistant-docker.onrender.com/v1/admin/documents/presign-upload")
                 .post("{}".toRequestBody("application/json".toMediaType()))
                 .build(),
         ).execute().close()
@@ -100,6 +108,40 @@ class R2PresignedUploadTest {
         assertEquals("custom-backend.example.com", backendReq.url.host)
         assertEquals("/v1/admin/documents/presign-upload", backendReq.url.encodedPath)
         assertEquals("Bearer secret-jwt-token", backendReq.header("Authorization"))
+
+        // 2. Default backend host without custom override routes directly to railway-ai-assistant-docker.onrender.com
+        val defaultCaptured = mutableListOf<Request>()
+        val defaultClient = OkHttpClient.Builder()
+            .addInterceptor(
+                DynamicBaseUrlInterceptor(
+                    baseUrlProvider = { BuildConfig.DEFAULT_BACKEND_BASE_URL },
+                ),
+            )
+            .addInterceptor(
+                AuthInterceptor(
+                    tokenProvider = { "secret-jwt-token" },
+                    allowedHostsProvider = {
+                        NetworkModule.resolveBackendHosts(BuildConfig.DEFAULT_BACKEND_BASE_URL)
+                    },
+                ),
+            )
+            .addInterceptor { chain ->
+                val req = chain.request()
+                defaultCaptured.add(req)
+                Response.Builder()
+                    .request(req)
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body("""{"status":"ok"}""".toResponseBody("application/json".toMediaType()))
+                    .build()
+            }
+            .build()
+        val apiService = NetworkModule.createApiService(okHttpClient = defaultClient, moshi = NetworkModule.createMoshi())
+        runBlocking { apiService.getHealth() }
+        assertEquals("railway-ai-assistant-docker.onrender.com", defaultCaptured[0].url.host)
+        assertEquals("/v1/health", defaultCaptured[0].url.encodedPath)
+        assertEquals("Bearer secret-jwt-token", defaultCaptured[0].header("Authorization"))
 
         // 2. Presigned R2 URL MUST keep R2 host/query untouched and NEVER attach Backend Bearer token
         val r2Url = "https://acct123.r2.cloudflarestorage.com/railway-rules-pdfs/wr/bct/opt/rule.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-SignedHeaders=content-type%3Bhost&X-Amz-Signature=deadbeef"
