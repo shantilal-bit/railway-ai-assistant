@@ -12,6 +12,7 @@ import com.example.data.remote.ReprocessDocumentRequestDto
 import com.example.domain.model.AdminDocumentItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -20,10 +21,11 @@ import java.security.MessageDigest
 
 class AdminRepository(
     private val apiService: RailwayRulesApiService,
-    private val okHttpClient: OkHttpClient,
+    private val r2OkHttpClient: OkHttpClient,
 ) {
     companion object {
         const val MAX_PDF_BYTES: Long = 50L * 1024L * 1024L
+        const val PDF_CONTENT_TYPE = "application/pdf"
         private val PDF_MAGIC = "%PDF-".toByteArray(Charsets.US_ASCII)
 
         fun validatePdfBytes(bytes: ByteArray) {
@@ -32,6 +34,16 @@ class AdminRepository(
             val headerSlice = bytes.copyOfRange(0, minOf(bytes.size, 1024))
             val hasSignature = indexOfBytes(headerSlice, PDF_MAGIC) >= 0
             require(hasSignature) { "Selected file is not a valid PDF document." }
+        }
+
+        fun buildPresignedR2PutRequest(presignedPutUrl: String, pdfBytes: ByteArray): Request {
+            val parsedUrl = presignedPutUrl.trim().toHttpUrlOrNull()
+                ?: throw IllegalArgumentException("Invalid presigned upload URL.")
+            return Request.Builder()
+                .url(parsedUrl)
+                .header("Content-Type", PDF_CONTENT_TYPE)
+                .put(pdfBytes.toRequestBody(PDF_CONTENT_TYPE.toMediaType()))
+                .build()
         }
 
         private fun indexOfBytes(haystack: ByteArray, needle: ByteArray): Int {
@@ -96,14 +108,16 @@ class AdminRepository(
                 ),
             )
 
-            val putRequest = Request.Builder()
-                .url(presign.presignedPutUrl)
-                .put(pdfBytes.toRequestBody("application/pdf".toMediaType()))
-                .build()
-            okHttpClient.newCall(putRequest).execute().use { resp ->
+            val putRequest = buildPresignedR2PutRequest(
+                presignedPutUrl = presign.presignedPutUrl,
+                pdfBytes = pdfBytes,
+            )
+            r2OkHttpClient.newCall(putRequest).execute().use { resp ->
                 if (!resp.isSuccessful) {
                     return@withContext Result.failure(
-                        IllegalStateException("Document upload failed (HTTP ${resp.code})"),
+                        IllegalStateException(
+                            "Document upload failed (HTTP ${resp.code} on ${resp.request.url.host})",
+                        ),
                     )
                 }
             }

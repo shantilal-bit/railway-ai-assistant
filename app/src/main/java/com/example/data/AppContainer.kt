@@ -14,6 +14,7 @@ class AppContainer(application: Application) {
     val database = RailwayDatabase.create(application)
     val moshi = NetworkModule.createMoshi()
     val okHttpClient = NetworkModule.createOkHttpClient(preferences)
+    val r2UploadOkHttpClient = NetworkModule.createR2UploadOkHttpClient()
     val apiService = NetworkModule.createApiService(okHttpClient = okHttpClient, moshi = moshi)
 
     val taxonomyRepository = TaxonomyRepository(
@@ -35,6 +36,6 @@ class AppContainer(application: Application) {
 
     val adminRepository = AdminRepository(
         apiService = apiService,
-        okHttpClient = okHttpClient,
+        r2OkHttpClient = r2UploadOkHttpClient,
     )
 }
