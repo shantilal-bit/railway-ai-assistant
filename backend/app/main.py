@@ -9,6 +9,7 @@ Production RAG Architecture:
 """
 
 
+import logging
 import os
 import re
 from datetime import datetime, timezone
@@ -22,8 +23,8 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from supabase import Client, create_client
 
-from app.ai_providers import get_ai_provider
-from app.embeddings import BGE_M3_DIMENSIONS, BGE_M3_MODEL, CloudflareBgeM3Embedder
+from app.ai_providers import AIProviderError, get_ai_provider
+from app.embeddings import BGE_M3_DIMENSIONS, BGE_M3_MODEL, CloudflareBgeM3Embedder, EmbeddingError
 from app.pdf_pipeline import (
     PdfPipelineError,
     compute_sha256,
@@ -38,6 +39,7 @@ from app.rag_service import (
     sanitize_error_message,
 )
 
+logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="Railway Rules AI Assistant API", version="2.0.0")
 app.state.limiter = limiter
@@ -78,11 +80,28 @@ async def get_current_user(authorization: Optional[str] = Header(default=None)):
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing bearer token")
     token = authorization.removeprefix("Bearer ").strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing bearer token")
     sb = get_supabase()
-    user_resp = sb.auth.get_user(token)
+    try:
+        user_resp = sb.auth.get_user(token)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Supabase JWT verification failed: %s", sanitize_error_message(exc))
+        raise HTTPException(status_code=401, detail="Invalid or expired session") from exc
+
     if not user_resp or not user_resp.user:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
-    profile = sb.table("profiles").select("*").eq("id", user_resp.user.id).single().execute()
+
+    try:
+        profile = sb.table("profiles").select("*").eq("id", user_resp.user.id).single().execute()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Profile lookup failed: %s", sanitize_error_message(exc))
+        raise HTTPException(status_code=401, detail="User profile not found") from exc
+
     if not profile.data:
         raise HTTPException(status_code=401, detail="User profile not found")
     return profile.data
@@ -260,6 +279,10 @@ class SignupRequest(BaseModel):
     employeeId: Optional[str] = None
 
 
+class RefreshTokenRequest(BaseModel):
+    refreshToken: str = Field(..., min_length=10)
+
+
 class PresignUploadRequest(BaseModel):
     fileName: str
     zoneCode: str
@@ -387,23 +410,71 @@ async def signup(request: Request, body: SignupRequest):
     return {"status": "created", "userId": res.user.id}
 
 
+@app.post("/v1/auth/refresh")
+@limiter.limit("20/minute")
+async def refresh_session(request: Request, body: RefreshTokenRequest):
+    sb = get_supabase()
+    try:
+        res = sb.auth.refresh_session(body.refreshToken.strip())
+    except Exception as exc:
+        logger.warning("Session refresh failed: %s", sanitize_error_message(exc))
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token") from exc
+
+    if not res or not res.session or not res.user:
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+
+    profile = sb.table("profiles").select("*").eq("id", res.user.id).single().execute().data
+    if not profile:
+        raise HTTPException(status_code=401, detail="User profile not found")
+
+    return {
+        "accessToken": res.session.access_token,
+        "refreshToken": res.session.refresh_token,
+        "user": profile,
+    }
+
+
 @app.post("/v1/chat/ask")
 @limiter.limit("20/minute")
 async def ask_rule(request: Request, body: ChatAskRequest, user=Depends(get_current_user)):
     sb = get_supabase()
-    provider = get_ai_provider()
-    embedder = CloudflareBgeM3Embedder()
-    return await answer_railway_rule_question(
-        sb=sb,
-        question=body.question,
-        zone_id=body.zoneId,
-        division_id=body.divisionId,
-        department_id=body.departmentId,
-        preferred_language=body.preferredLanguage,
-        history=body.history,
-        embedder=embedder,
-        ai_provider=provider,
-    )
+    try:
+        provider = get_ai_provider()
+        embedder = CloudflareBgeM3Embedder()
+        return await answer_railway_rule_question(
+            sb=sb,
+            question=body.question,
+            zone_id=body.zoneId,
+            division_id=body.divisionId,
+            department_id=body.departmentId,
+            preferred_language=body.preferredLanguage,
+            history=body.history,
+            embedder=embedder,
+            ai_provider=provider,
+        )
+    except HTTPException:
+        raise
+    except AIProviderError as exc:
+        logger.error("Chat AI provider error: %s", sanitize_error_message(exc))
+        status = 429 if exc.status_code == 429 else 503
+        detail = (
+            "AI answer service rate limit reached. Please retry in a moment."
+            if status == 429
+            else "AI answer generation service is temporarily unavailable."
+        )
+        raise HTTPException(status_code=status, detail=detail) from exc
+    except EmbeddingError as exc:
+        logger.error("Chat embedding error: %s", sanitize_error_message(exc))
+        raise HTTPException(
+            status_code=503,
+            detail="Rule search embedding service is temporarily unavailable.",
+        ) from exc
+    except Exception as exc:
+        logger.error("Unexpected chat error: %s", sanitize_error_message(exc))
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to process rule query right now. Please try again.",
+        ) from exc
 
 
 @app.get("/v1/admin/documents")

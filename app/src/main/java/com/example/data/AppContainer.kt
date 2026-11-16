@@ -23,15 +23,16 @@ class AppContainer(application: Application) {
         preferences = preferences,
     )
 
+    val authRepository = AuthRepository(
+        apiService = apiService,
+        preferences = preferences,
+    )
+
     val chatRepository = ChatRepository(
         dao = database.railwayDao(),
         apiService = apiService,
         moshi = moshi,
-    )
-
-    val authRepository = AuthRepository(
-        apiService = apiService,
-        preferences = preferences,
+        onRefreshAuthSession = { authRepository.refreshSession().isSuccess },
     )
 
     val adminRepository = AdminRepository(

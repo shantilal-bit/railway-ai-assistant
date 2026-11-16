@@ -64,6 +64,11 @@ data class SignupRequestDto(
 )
 
 @JsonClass(generateAdapter = true)
+data class RefreshTokenRequestDto(
+    val refreshToken: String,
+)
+
+@JsonClass(generateAdapter = true)
 data class UserProfileDto(
     val id: String,
     val email: String,

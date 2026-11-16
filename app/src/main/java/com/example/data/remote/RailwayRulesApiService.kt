@@ -23,6 +23,9 @@ interface RailwayRulesApiService {
     @POST("v1/auth/signup")
     suspend fun signup(@Body request: SignupRequestDto): SignupResponseDto
 
+    @POST("v1/auth/refresh")
+    suspend fun refreshSession(@Body request: RefreshTokenRequestDto): AuthSessionResponseDto
+
     @POST("v1/chat/ask")
     suspend fun askRule(@Body request: ChatAskRequestDto): ChatAskResponseDto
 

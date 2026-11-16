@@ -265,6 +265,8 @@ class FakeSupabaseQuery:
         self._op = "select"
         self._payload = None
         self._filters = []
+        self._in_filters = []
+        self._order_col = None
         self._limit = None
         self._single = False
 
@@ -290,7 +292,12 @@ class FakeSupabaseQuery:
         self._filters.append((col, val))
         return self
 
-    def order(self, *args, **kwargs):
+    def in_(self, col, vals):
+        self._in_filters.append((col, set(vals)))
+        return self
+
+    def order(self, col=None, *args, **kwargs):
+        self._order_col = col
         return self
 
     def limit(self, n):
@@ -305,10 +312,14 @@ class FakeSupabaseQuery:
         rows = self.sb.tables.setdefault(self.table_name, [])
 
         def _matches(row):
-            return all(row.get(k) == v for k, v in self._filters)
+            return all(row.get(k) == v for k, v in self._filters) and all(
+                row.get(k) in vals for k, vals in self._in_filters
+            )
 
         if self._op == "select":
             matched = [dict(r) for r in rows if _matches(r)]
+            if self._order_col:
+                matched.sort(key=lambda r: r.get(self._order_col) or 0)
             if self._limit is not None:
                 matched = matched[: self._limit]
             if self._single:

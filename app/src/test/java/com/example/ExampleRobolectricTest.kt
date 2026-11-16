@@ -3,19 +3,46 @@ package com.example
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.example.core.config.AppPreferences
 import com.example.data.local.DepartmentEntity
 import com.example.data.local.DivisionEntity
 import com.example.data.local.RailwayDatabase
 import com.example.data.local.ZoneEntity
 import com.example.data.remote.AdminDocumentDto
+import com.example.data.remote.AuthSessionResponseDto
+import com.example.data.remote.ChatAskRequestDto
 import com.example.data.remote.ChatAskResponseDto
+import com.example.data.remote.DocumentStatusUpdateDto
+import com.example.data.remote.HealthResponseDto
 import com.example.data.remote.ImportDrivePdfRequestDto
+import com.example.data.remote.LoginRequestDto
 import com.example.data.remote.NetworkModule
+import com.example.data.remote.PresignUploadRequestDto
+import com.example.data.remote.PresignUploadResponseDto
+import com.example.data.remote.RailwayRulesApiService
+import com.example.data.remote.RefreshTokenRequestDto
+import com.example.data.remote.RegisterDocumentRequestDto
+import com.example.data.remote.ReprocessDocumentRequestDto
+import com.example.data.remote.SignupRequestDto
+import com.example.data.remote.SignupResponseDto
 import com.example.data.remote.TaxonomyResponseDto
+import com.example.data.remote.UserProfileDto
 import com.example.data.repository.AdminRepository
+import com.example.data.repository.AuthRepository
+import com.example.data.repository.ChatRepository
+import com.example.domain.model.ChatSession
+import com.example.domain.model.MessageSender
+import com.example.domain.model.QueryLanguage
 import com.example.domain.model.ScopeLevel
+import com.example.domain.model.UserProfile
+import com.example.domain.model.UserRole
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
@@ -24,6 +51,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import retrofit2.HttpException
+import retrofit2.Response
+import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
@@ -197,5 +227,142 @@ class ExampleRobolectricTest {
         val json = adapter.toJson(req)
         assertTrue(json.contains("\"scopeLevel\":\"RAILWAY_BOARD\""))
         assertTrue(json.contains("\"authorityRank\":100"))
+    }
+
+    @Test
+    fun `AuthRepository refreshSession coalesces concurrent requests into one refresh call`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = AppPreferences(context)
+        prefs.clearAuthSession()
+        val profile = UserProfile("u-1", "emp@wr.rail.in", "Test Staff", "WR001", UserRole.EMPLOYEE)
+        prefs.saveAuthSession("at-old", "rt-initial-12345", profile)
+
+        val refreshCalls = AtomicInteger(0)
+        val fakeApi = object : StubRailwayRulesApiService() {
+            override suspend fun refreshSession(request: RefreshTokenRequestDto): AuthSessionResponseDto {
+                refreshCalls.incrementAndGet()
+                delay(80)
+                return AuthSessionResponseDto(
+                    accessToken = "at-new",
+                    refreshToken = "rt-new-67890",
+                    user = UserProfileDto("u-1", "emp@wr.rail.in", "Test Staff", "WR001", "employee"),
+                )
+            }
+        }
+        try {
+            val repo = AuthRepository(fakeApi, prefs)
+            val results = (1..5).map {
+                async { repo.refreshSession() }
+            }.awaitAll()
+
+            assertEquals(1, refreshCalls.get())
+            assertTrue(results.all { it.isSuccess })
+            assertEquals("at-new", prefs.getAccessToken())
+            assertEquals("rt-new-67890", prefs.getRefreshToken())
+        } finally {
+            prefs.clearAuthSession()
+        }
+    }
+
+    @Test
+    fun `AuthRepository stale 401 refresh failure does not clear newer valid login session`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = AppPreferences(context)
+        prefs.clearAuthSession()
+        val initialProfile = UserProfile("u-1", "emp@wr.rail.in", "Test Staff", "WR001", UserRole.EMPLOYEE)
+        prefs.saveAuthSession("at-old", "rt-stale-12345", initialProfile)
+
+        val fakeApi = object : StubRailwayRulesApiService() {
+            override suspend fun login(request: LoginRequestDto): AuthSessionResponseDto {
+                return AuthSessionResponseDto(
+                    accessToken = "at-fresh-login",
+                    refreshToken = "rt-fresh-login-99999",
+                    user = UserProfileDto("u-1", "emp@wr.rail.in", "Test Staff", "WR001", "employee"),
+                )
+            }
+
+            override suspend fun refreshSession(request: RefreshTokenRequestDto): AuthSessionResponseDto {
+                delay(120)
+                throw HttpException(
+                    Response.error<AuthSessionResponseDto>(
+                        401,
+                        """{"detail":"Invalid or expired refresh token"}""".toResponseBody("application/json".toMediaType()),
+                    ),
+                )
+            }
+        }
+
+        try {
+            val repo = AuthRepository(fakeApi, prefs)
+            val refreshJob = async { repo.refreshSession() }
+            delay(30)
+            // User completes fresh login while old refresh is in flight
+            val loginResult = repo.login("emp@wr.rail.in", "secret")
+            assertTrue(loginResult.isSuccess)
+
+            val refreshResult = refreshJob.await()
+            assertTrue(refreshResult.isFailure)
+            // Newer valid session MUST NOT be wiped out by stale 401 refresh
+            assertEquals("at-fresh-login", prefs.getAccessToken())
+            assertEquals("rt-fresh-login-99999", prefs.getRefreshToken())
+        } finally {
+            prefs.clearAuthSession()
+        }
+    }
+
+    @Test
+    fun `ChatRepository askQuestion retries once on 401 without infinite loop`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, RailwayDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val askCalls = AtomicInteger(0)
+            val refreshCalls = AtomicInteger(0)
+            val fakeApi = object : StubRailwayRulesApiService() {
+                override suspend fun askRule(request: ChatAskRequestDto): ChatAskResponseDto {
+                    askCalls.incrementAndGet()
+                    throw HttpException(
+                        Response.error<ChatAskResponseDto>(
+                            401,
+                            """{"detail":"Expired"}""".toResponseBody("application/json".toMediaType()),
+                        ),
+                    )
+                }
+            }
+            val repo = ChatRepository(
+                dao = db.railwayDao(),
+                apiService = fakeApi,
+                moshi = NetworkModule.createMoshi(),
+                onRefreshAuthSession = {
+                    refreshCalls.incrementAndGet()
+                    true
+                },
+            )
+            val session = ChatSession("s-1", "Test", "1", "WR", "11", "BCT", "101", "OPT", 0L)
+            repo.askQuestion(session, "Pointsman duty?", QueryLanguage.AUTO)
+
+            assertEquals(2, askCalls.get())
+            assertEquals(1, refreshCalls.get())
+            val messages = db.railwayDao().getMessagesForSession("s-1")
+            assertEquals(MessageSender.SYSTEM_ERROR.name, messages.last().sender)
+        } finally {
+            db.close()
+        }
+    }
+
+    private open class StubRailwayRulesApiService : RailwayRulesApiService {
+        override suspend fun getHealth(): HealthResponseDto = throw UnsupportedOperationException()
+        override suspend fun getTaxonomy(includeInactiveZones: Boolean): TaxonomyResponseDto = throw UnsupportedOperationException()
+        override suspend fun login(request: LoginRequestDto): AuthSessionResponseDto = throw UnsupportedOperationException()
+        override suspend fun signup(request: SignupRequestDto): SignupResponseDto = throw UnsupportedOperationException()
+        override suspend fun refreshSession(request: RefreshTokenRequestDto): AuthSessionResponseDto = throw UnsupportedOperationException()
+        override suspend fun askRule(request: ChatAskRequestDto): ChatAskResponseDto = throw UnsupportedOperationException()
+        override suspend fun listAdminDocuments(search: String?): List<AdminDocumentDto> = emptyList()
+        override suspend fun presignPdfUpload(request: PresignUploadRequestDto): PresignUploadResponseDto = throw UnsupportedOperationException()
+        override suspend fun registerDocument(request: RegisterDocumentRequestDto): AdminDocumentDto = throw UnsupportedOperationException()
+        override suspend fun importDrivePdf(request: ImportDrivePdfRequestDto): AdminDocumentDto = throw UnsupportedOperationException()
+        override suspend fun reprocessDocument(documentId: String, body: ReprocessDocumentRequestDto): AdminDocumentDto = throw UnsupportedOperationException()
+        override suspend fun updateDocumentStatus(documentId: String, body: DocumentStatusUpdateDto): AdminDocumentDto = throw UnsupportedOperationException()
     }
 }

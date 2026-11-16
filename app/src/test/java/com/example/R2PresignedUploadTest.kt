@@ -322,6 +322,7 @@ class R2PresignedUploadTest {
         override suspend fun getTaxonomy(includeInactiveZones: Boolean): TaxonomyResponseDto = throw UnsupportedOperationException()
         override suspend fun login(request: LoginRequestDto): AuthSessionResponseDto = throw UnsupportedOperationException()
         override suspend fun signup(request: SignupRequestDto): SignupResponseDto = throw UnsupportedOperationException()
+        override suspend fun refreshSession(request: com.example.data.remote.RefreshTokenRequestDto): AuthSessionResponseDto = throw UnsupportedOperationException()
         override suspend fun askRule(request: ChatAskRequestDto): ChatAskResponseDto = throw UnsupportedOperationException()
         override suspend fun listAdminDocuments(search: String?): List<AdminDocumentDto> = emptyList()
         override suspend fun presignPdfUpload(request: PresignUploadRequestDto): PresignUploadResponseDto = throw UnsupportedOperationException()

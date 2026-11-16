@@ -70,6 +70,8 @@ class AppPreferences(private val context: Context) {
 
     suspend fun getAccessToken(): String? = context.dataStore.data.first()[Keys.ACCESS_TOKEN]
 
+    suspend fun getRefreshToken(): String? = context.dataStore.data.first()[Keys.REFRESH_TOKEN]
+
     suspend fun getBackendBaseUrl(): String = backendBaseUrlFlow.first()
 
     suspend fun saveSelection(zoneId: String, divisionId: String, departmentId: String) {

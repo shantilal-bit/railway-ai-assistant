@@ -28,6 +28,7 @@ class ChatRepository(
     private val dao: RailwayDao,
     private val apiService: RailwayRulesApiService,
     moshi: Moshi,
+    private val onRefreshAuthSession: (suspend () -> Boolean)? = null,
 ) {
     private val answerAdapter = moshi.adapter(ChatAskResponseDto::class.java)
 
@@ -172,17 +173,24 @@ class ChatRepository(
             }
 
         try {
-            val responseDto = apiService.askRule(
-                ChatAskRequestDto(
-                    sessionId = session.id,
-                    zoneId = session.zoneId,
-                    divisionId = session.divisionId,
-                    departmentId = session.departmentId,
-                    question = trimmed,
-                    preferredLanguage = preferredLanguage.code,
-                    history = recentTurns,
-                ),
+            val requestDto = ChatAskRequestDto(
+                sessionId = session.id,
+                zoneId = session.zoneId,
+                divisionId = session.divisionId,
+                departmentId = session.departmentId,
+                question = trimmed,
+                preferredLanguage = preferredLanguage.code,
+                history = recentTurns,
             )
+            val responseDto = try {
+                apiService.askRule(requestDto)
+            } catch (e: HttpException) {
+                if (e.code() == 401 && onRefreshAuthSession?.invoke() == true) {
+                    apiService.askRule(requestDto)
+                } else {
+                    throw e
+                }
+            }
 
             val json = answerAdapter.toJson(responseDto)
             dao.insertMessage(
@@ -201,10 +209,13 @@ class ChatRepository(
         } catch (e: Exception) {
             val honestError = when (e) {
                 is HttpException -> when (e.code()) {
-                    401 -> "Please sign in under Employee Account to ask Railway rule questions."
+                    401 -> "Session expired or not signed in. Please sign in under Employee Account to ask Railway rule questions."
                     429 -> "Too many requests right now. Please wait a moment before asking another question."
+                    502, 503, 504 -> "Railway Rules AI service is temporarily busy or waking up (HTTP ${e.code()}). Please retry in a few seconds."
                     else -> "Railway Rules service returned an error (HTTP ${e.code()}). Please try again."
                 }
+                is java.net.SocketTimeoutException ->
+                    "The server took too long to respond (cold start or busy). Please retry in a moment."
                 is IOException ->
                     "Unable to reach the Railway Rules service. Please check your internet or connection settings and try again."
                 else -> e.localizedMessage ?: "Unable to fetch rule answer right now."
