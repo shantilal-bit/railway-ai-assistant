@@ -1,0 +1,228 @@
+name: G&SR Read-Only Dry-Run Audit
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gsr-readonly-dry-run-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  readonly-gsr-audit:
+    name: Read-Only G&SR PDF Extraction & Chunking Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository (read-only)
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install Tesseract OCR system dependencies (eng + hin)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            tesseract-ocr \
+            tesseract-ocr-eng \
+            tesseract-ocr-hin \
+            libgl1 \
+            libglib2.0-0
+
+      - name: Install backend Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements.txt
+
+      - name: Run Read-Only G&SR Dry-Run Audit
+        id: dry_run
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONUNBUFFERED: "1"
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          R2_READONLY_ACCESS_KEY_ID: ${{ secrets.R2_READONLY_ACCESS_KEY_ID }}
+          R2_READONLY_SECRET_ACCESS_KEY: ${{ secrets.R2_READONLY_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_TOKEN_INSPECT_API_KEY: ${{ secrets.CLOUDFLARE_TOKEN_INSPECT_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_READONLY_JWT: ${{ secrets.SUPABASE_READONLY_JWT }}
+        run: |
+          set +e
+          log_file="$(mktemp)"
+          trap 'rm -f "${log_file}"' EXIT
+
+          python3 -B backend/scripts/gsr_dry_run_audit.py \
+            --backend-dir backend \
+            --focus-start-page 230 \
+            --focus-end-page 245 \
+            >"${log_file}" 2>&1
+          audit_exit=$?
+
+          echo "exit_code=${audit_exit}" >> "${GITHUB_OUTPUT}"
+
+          summary_text=""
+          summary_text="$(python3 -B - "${log_file}" "${audit_exit}" <<'PY' 2>/dev/null
+          import ast
+          import pathlib
+          import re
+          import sys
+
+          log_path = pathlib.Path(sys.argv[1])
+          exit_code = int(sys.argv[2])
+          allowed_statuses = {"PASS", "FAIL", "INCONCLUSIVE"}
+          outcome_map = {0: "PASS", 1: "FAIL", 2: "INCONCLUSIVE"}
+          outcome = outcome_map.get(exit_code, "ERROR")
+
+          def emit_withheld():
+              print("## G&SR Read-Only Dry-Run Audit Summary")
+              print("")
+              print("- **Status:** Audit output captured; detailed report withheld")
+              print(f"- **Outcome:** {outcome}")
+              print(f"- **Exit Code:** `{exit_code}`")
+
+          try:
+              text = log_path.read_text(encoding="utf-8", errors="replace")
+          except Exception:
+              emit_withheld()
+              sys.exit(0)
+
+          lines = text.splitlines()
+          verdicts = {}
+          in_verdicts = False
+          declared_exit = None
+          total_pages = None
+          old_chunks = None
+          new_chunks = None
+          rule_verified = None
+          rule_unclassified = None
+          sr513_count = None
+          sr513_rule_ids = set()
+          in_sr513 = False
+          in_limits = False
+
+          for line in lines:
+              s = line.strip()
+              if s.startswith("=== "):
+                  in_sr513 = (s == "=== SR 5.13 HIERARCHY & SUB-RULES ===")
+                  if in_sr513 and sr513_count is None:
+                      sr513_count = 0
+                  in_limits = (s == "=== EXTRACTION & OCR LIMITATIONS (SEPARATE REPORT) ===")
+                  m_verdict_hdr = re.fullmatch(r"=== FINAL VERDICTS \(EXIT_CODE=(\d+)\) ===", s)
+                  in_verdicts = bool(m_verdict_hdr)
+                  if m_verdict_hdr:
+                      declared_exit = int(m_verdict_hdr.group(1))
+                  continue
+
+              if in_verdicts:
+                  m_v = re.fullmatch(r"([a-z0-9_]+):\s*(PASS|FAIL|INCONCLUSIVE)", s)
+                  if m_v:
+                      verdicts[m_v.group(1)] = m_v.group(2)
+                  continue
+
+              if in_limits and total_pages is None and s.startswith("{") and s.endswith("}"):
+                  try:
+                      lim_dict = ast.literal_eval(s)
+                      if isinstance(lim_dict, dict) and isinstance(lim_dict.get("total_pages"), int):
+                          total_pages = lim_dict["total_pages"]
+                  except Exception:
+                      pass
+                  continue
+
+              if in_sr513 and s.startswith("{") and s.endswith("}"):
+                  if sr513_count is None:
+                      sr513_count = 0
+                  try:
+                      item = ast.literal_eval(s)
+                      if isinstance(item, dict):
+                          sr513_count += 1
+                          rn = str(item.get("rule_number") or "").strip()
+                          if re.fullmatch(r"SR 5\.13(?:\.\d+)*(?:\([0-9a-zA-Z]+\))*", rn):
+                              sr513_rule_ids.add(rn)
+                  except Exception:
+                      pass
+                  continue
+
+              m_old = re.match(r"^Verified DB chunks\s*:\s*(\d+)\b", s)
+              if m_old:
+                  old_chunks = int(m_old.group(1))
+                  continue
+
+              m_new = re.match(r"^New Chunk Integrity\s*:\s*(PASS|FAIL|INCONCLUSIVE)\s*\(total=(\d+)\)", s)
+              if m_new:
+                  new_chunks = int(m_new.group(2))
+                  continue
+
+              m_cls = re.match(
+                  r"^GR/SR Classification\s*:\s*(PASS|FAIL|INCONCLUSIVE)\s*\(verified=(\d+),\s*unclassified_rule=(\d+)\)",
+                  s,
+              )
+              if m_cls:
+                  rule_verified = int(m_cls.group(2))
+                  rule_unclassified = int(m_cls.group(3))
+                  continue
+
+          if in_sr513 and sr513_count is None:
+              sr513_count = 0
+
+          text_parity = verdicts.get("text_loss_audit")
+          rule_audit = verdicts.get("gr_sr_classification")
+          page_mapping = verdicts.get("page_mapping_audit")
+
+          required_ok = (
+              declared_exit == exit_code
+              and text_parity in allowed_statuses
+              and rule_audit in allowed_statuses
+              and page_mapping in allowed_statuses
+              and isinstance(total_pages, int) and total_pages >= 0
+              and isinstance(old_chunks, int) and old_chunks >= 0
+              and isinstance(new_chunks, int) and new_chunks >= 0
+              and isinstance(sr513_count, int) and sr513_count >= 0
+          )
+
+          if not required_ok:
+              emit_withheld()
+              sys.exit(0)
+
+          sr513_audit = (
+              f"FOUND (chunks={sr513_count}, distinct_sr_5_13_labels={len(sr513_rule_ids)})"
+              if sr513_count > 0
+              else "NONE_FOUND (chunks=0)"
+          )
+          rule_detail = (
+              f"{rule_audit} (verified={rule_verified}, unclassified_rule={rule_unclassified})"
+              if rule_verified is not None and rule_unclassified is not None
+              else rule_audit
+          )
+
+          print("## G&SR Read-Only Dry-Run Audit Summary")
+          print("")
+          print(f"- **Outcome:** {outcome}")
+          print(f"- **Total PDF Pages:** {total_pages}")
+          print(f"- **Old DB Chunks:** {old_chunks}")
+          print(f"- **New Parser Chunks:** {new_chunks}")
+          print(f"- **Text Parity Audit:** {text_parity}")
+          print(f"- **Rule-Label Audit:** {rule_detail}")
+          print(f"- **Page Mapping Audit:** {page_mapping}")
+          print(f"- **SR 5.13 Audit:** {sr513_audit}")
+          print(f"- **Exit Code:** `{exit_code}`")
+          PY
+          )"
+          parse_status=$?
+          rm -f "${log_file}"
+
+          if [ "${parse_status}" -ne 0 ] || [ -z "${summary_text}" ]; then
+            summary_text="$(printf '## G&SR Read-Only Dry-Run Audit Summary\n\n- **Status:** Audit output captured; detailed report withheld\n- **Exit Code:** `%s`\n' "${audit_exit}")"
+          fi
+
+          printf '%s\n' "${summary_text}"
+          printf '%s\n' "${summary_text}" >> "${GITHUB_STEP_SUMMARY}"
+          exit "${audit_exit}"

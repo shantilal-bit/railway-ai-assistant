@@ -13,7 +13,7 @@ from app.embeddings import CloudflareBgeM3Embedder, EmbeddingError
 from app.pdf_pipeline import (
     PdfPipelineError,
     chunk_pages_with_metadata,
-    extract_pdf_pages_with_stats,
+    extract_pdf_pages_detailed,
     validate_pdf_bytes,
 )
 from app.query_understanding import (
@@ -109,7 +109,7 @@ async def ingest_document_bytes(
 
     try:
         validate_pdf_bytes(pdf_bytes)
-        pages, used_ocr = extract_pdf_pages_with_stats(pdf_bytes, force_ocr=force_ocr)
+        pages, used_ocr = extract_pdf_pages_detailed(pdf_bytes, force_ocr=force_ocr)
         chunks = chunk_pages_with_metadata(pages)
 
         if not chunks:
@@ -137,7 +137,19 @@ async def ingest_document_bytes(
                     "embedding_bge_m3": vec,
                     "metadata": {
                         "page_number": chunk.page_number,
+                        "physical_page_number": chunk.physical_page_number,
+                        "printed_page_candidate": chunk.printed_page_candidate,
+                        "printed_page_status": chunk.printed_page_status,
                         "rule_number": chunk.rule_number,
+                        "rule_kind": chunk.rule_kind,
+                        "parent_rule": chunk.parent_rule,
+                        "contained_rules": list(chunk.contained_rules),
+                        "cross_references": list(chunk.cross_references),
+                        "is_continuation": chunk.is_continuation,
+                        "continued_from_rule": chunk.continued_from_rule,
+                        "classification_confidence": chunk.classification_confidence,
+                        "source_start_offset": chunk.source_start_offset,
+                        "source_end_offset": chunk.source_end_offset,
                         "chapter": chunk.chapter,
                         "embedding_model": "@cf/baai/bge-m3",
                         "embedding_dim": len(vec),
